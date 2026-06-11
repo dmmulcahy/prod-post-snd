@@ -1,0 +1,190 @@
+
+<style>
+  .meter-wrap { padding: 1.5rem 0; }
+  .controls { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .controls label { font-size: 13px; color: var(--color-text-secondary); }
+  .mode-btn { font-size: 13px; padding: 5px 14px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-secondary); background: transparent; color: var(--color-text-secondary); cursor: pointer; transition: background .15s, color .15s; }
+  .mode-btn.active { background: var(--color-background-secondary); color: var(--color-text-primary); border-color: var(--color-border-primary); }
+  #detail-box { background: var(--color-background-secondary); border-radius: var(--border-radius-lg); border: 0.5px solid var(--color-border-tertiary); padding: 1rem 1.25rem; margin-top: 1rem; min-height: 64px; }
+  #detail-title { font-size: 14px; font-weight: 500; color: var(--color-text-primary); margin: 0 0 4px; }
+  #detail-body { font-size: 13px; color: var(--color-text-secondary); margin: 0; line-height: 1.55; }
+</style>
+<h2 class="sr-only">Interactive decibel scale for production sound, showing SPL and dBFS reference points</h2>
+<div class="meter-wrap">
+  <div class="controls">
+    <label>View:</label>
+    <button class="mode-btn active" onclick="setMode('spl')">dB SPL — acoustic world</button>
+    <button class="mode-btn" onclick="setMode('dbfs')">dBFS — digital world</button>
+  </div>
+  <svg id="viz" width="100%" viewBox="0 0 680 480" style="display:block"></svg>
+  <div id="detail-box">
+    <p id="detail-title">Click any marker to learn more</p>
+    <p id="detail-body">The interactive scale above shows real-world reference points used in production sound. Toggle between the acoustic (SPL) and digital (dBFS) views.</p>
+  </div>
+</div>
+
+<script>
+const modes = {
+  spl: {
+    label: 'dB SPL (acoustic)',
+    subtitle: '0 = threshold of human hearing  ·  120+ = pain threshold',
+    min: 0, max: 130,
+    invert: false,
+    markers: [
+      { val: 0,   label: 'Threshold of hearing', sub: 'The quietest sound a human can detect.', film: false },
+      { val: 20,  label: 'Quiet studio / dead room', sub: 'Treated recording booths aim for noise floors near here. Anything louder is background noise you\'ll fight in post.', film: true },
+      { val: 40,  label: 'Quiet interior location', sub: 'A house with HVAC off. Dialogue recorded here needs a preamp with a low noise floor.', film: true },
+      { val: 60,  label: 'Normal conversation', sub: 'The bread-and-butter of dialogue recording. A good boom placement captures this cleanly with plenty of headroom.', film: true },
+      { val: 75,  label: 'Loud dialogue / projecting actor', sub: 'Stage actors trained in projection can hit here. Start watching your meters on theatrical or period drama.', film: true },
+      { val: 85,  label: 'Action scene / crowd', sub: 'Typical onset noise floor during busy scenes. You\'re fighting this when trying to record clean dialogue simultaneously.', film: true },
+      { val: 100, label: 'Shouting / gunshot nearby', sub: 'A single gunshot peaks 140–160 dB at the muzzle. Protect hearing and monitor gain carefully. Often recorded separately as SFX.', film: true },
+      { val: 120, label: 'Pain threshold / jet engine', sub: 'Sustained exposure causes hearing damage. On-set monitoring must use hearing protection. Never a target — only a hazard.', film: false },
+    ]
+  },
+  dbfs: {
+    label: 'dBFS (digital)',
+    subtitle: '0 = digital ceiling (clipping)  ·  lower numbers = quieter signal',
+    min: -80, max: 0,
+    invert: true,
+    markers: [
+      { val:   0, label: '0 dBFS — clipping point', sub: 'Any signal that reaches here distorts permanently. There is no recovery in the box. This is the hard ceiling of digital audio.', film: true },
+      { val:  -3, label: 'Absolute peak limit', sub: 'Some engineers allow brief transients here, but it\'s risky. Most professional specs forbid peaks above –3 dBFS.', film: true },
+      { val:  -6, label: 'Recommended peak (-6 dBFS)', sub: 'A common target for production dialogue peaks. Leaves 6 dB of true headroom for unpredicted loud moments.', film: true },
+      { val: -12, label: 'Healthy peak zone (-12 dBFS)', sub: 'Gives generous headroom. Some mixers record quieter on noisy locations to avoid accidental clips, relying on the low noise floor of modern gear.', film: true },
+      { val: -18, label: 'Broadcast/film alignment tone', sub: '1 kHz tone at –18 dBFS is the standard reference tone used on slates and session files to align levels between departments.', film: true },
+      { val: -24, label: 'Average dialogue level (LUFS)', sub: 'LUFS (Loudness Units relative to Full Scale) measures perceived loudness over time. Dialogue often averages –24 to –20 LUFS on the production track.', film: true },
+      { val: -40, label: 'Low-level signal / room tone', sub: 'Room tone and quiet ambiences live here. Crucial for editing — you need matching room tone to fill gaps between dialogue lines.', film: true },
+      { val: -60, label: 'Noise floor of professional gear', sub: 'Modern professional preamps (e.g. Sound Devices recorders) have noise floors around –127 dBu equivalent. At –60 dBFS you have tremendous usable dynamic range above.', film: true },
+    ]
+  }
+};
+
+let currentMode = 'spl';
+
+function lerp(val, min, max, pxMin, pxMax, invert) {
+  const t = (val - min) / (max - min);
+  return invert ? pxMax - t * (pxMax - pxMin) : pxMin + t * (pxMax - pxMin);
+}
+
+function setMode(m) {
+  currentMode = m;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.textContent.startsWith(m === 'spl' ? 'dB SPL' : 'dBFS')));
+  render();
+}
+
+function showDetail(m) {
+  document.getElementById('detail-title').textContent = m.label;
+  document.getElementById('detail-body').textContent = m.sub;
+}
+
+function render() {
+  const cfg = modes[currentMode];
+  const svg = document.getElementById('viz');
+  const W = 680, H = 480;
+  const barX = 110, barW = 28, labX = 155;
+  const topY = 30, botY = 450;
+
+  // color gradient stops
+  const colors = currentMode === 'spl'
+    ? [
+        [0,   '#3B8BD4'],
+        [40,  '#1D9E75'],
+        [65,  '#63991f'],
+        [85,  '#BA7517'],
+        [100, '#D85A30'],
+        [120, '#A32D2D'],
+      ]
+    : [
+        [-80, '#3B8BD4'],
+        [-40, '#1D9E75'],
+        [-18, '#63991f'],
+        [-6,  '#BA7517'],
+        [-3,  '#D85A30'],
+        [0,   '#A32D2D'],
+      ];
+
+  function valToY(v) { return lerp(v, cfg.min, cfg.max, topY, botY, cfg.invert); }
+  function getColor(v) {
+    const c = colors;
+    if (v <= c[0][0]) return c[0][1];
+    if (v >= c[c.length-1][0]) return c[c.length-1][1];
+    for (let i = 1; i < c.length; i++) {
+      if (v <= c[i][0]) {
+        const t = (v - c[i-1][0]) / (c[i][0] - c[i-1][0]);
+        return lerpColor(c[i-1][1], c[i][1], t);
+      }
+    }
+    return '#888';
+  }
+
+  function lerpColor(a, b, t) {
+    const ah = parseInt(a.slice(1),16), bh = parseInt(b.slice(1),16);
+    const ar = (ah>>16)&255, ag=(ah>>8)&255, ab=ah&255;
+    const br = (bh>>16)&255, bg=(bh>>8)&255, bb=bh&255;
+    const rr = Math.round(ar+(br-ar)*t).toString(16).padStart(2,'0');
+    const rg = Math.round(ag+(bg-ag)*t).toString(16).padStart(2,'0');
+    const rb = Math.round(ab+(bb-ab)*t).toString(16).padStart(2,'0');
+    return '#'+rr+rg+rb;
+  }
+
+  let html = `<defs>
+    <marker id="arr2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>`;
+
+  // Draw bar as segments
+  const steps = 200;
+  for (let i = 0; i < steps; i++) {
+    const v0 = cfg.min + (cfg.max - cfg.min) * i / steps;
+    const v1 = cfg.min + (cfg.max - cfg.min) * (i+1) / steps;
+    const y0 = valToY(v0), y1 = valToY(v1);
+    const yTop = Math.min(y0, y1), yBot = Math.max(y0, y1) + 0.5;
+    const vmid = (v0 + v1) / 2;
+    html += `<rect x="${barX}" y="${yTop}" width="${barW}" height="${yBot - yTop}" fill="${getColor(vmid)}" opacity="0.85"/>`;
+  }
+
+  // Axis ticks
+  const tickCount = 7;
+  for (let i = 0; i <= tickCount; i++) {
+    const v = cfg.min + (cfg.max - cfg.min) * i / tickCount;
+    const y = valToY(v);
+    const vr = Math.round(v);
+    html += `<line x1="${barX-6}" y1="${y}" x2="${barX}" y2="${y}" stroke="var(--color-text-tertiary)" stroke-width="0.5"/>`;
+    html += `<text x="${barX-10}" y="${y}" text-anchor="end" dominant-baseline="central" style="font-size:11px;fill:var(--color-text-secondary);font-family:var(--font-mono,monospace)">${vr}</text>`;
+  }
+
+  // Bar border
+  html += `<rect x="${barX}" y="${topY}" width="${barW}" height="${botY - topY}" fill="none" stroke="var(--color-border-secondary)" stroke-width="0.5"/>`;
+
+  // Axis label
+  html += `<text x="30" y="${(topY + botY)/2}" text-anchor="middle" dominant-baseline="central" transform="rotate(-90,30,${(topY+botY)/2})" style="font-size:11px;fill:var(--color-text-secondary);font-family:var(--font-sans)">dB value</text>`;
+
+  // Header
+  html += `<text x="${barX + barW + 4}" y="18" style="font-size:13px;font-weight:500;fill:var(--color-text-primary);font-family:var(--font-sans)">${cfg.label}</text>`;
+  html += `<text x="${barX + barW + 4}" y="32" style="font-size:11px;fill:var(--color-text-secondary);font-family:var(--font-sans)">${cfg.subtitle}</text>`;
+
+  // Markers
+  cfg.markers.forEach((m, i) => {
+    const y = valToY(m.val);
+    const side = i % 2 === 0 ? 0 : 1;
+    const txEnd = W - 20;
+    const lineX1 = barX + barW + 2;
+    const dotX = lineX1;
+
+    html += `<circle cx="${dotX}" cy="${y}" r="4" fill="${getColor(m.val)}" stroke="var(--color-background-primary)" stroke-width="1.5"/>`;
+    html += `<line x1="${dotX+4}" y1="${y}" x2="${labX+16}" y2="${y}" stroke="${getColor(m.val)}" stroke-width="0.5" opacity="0.5"/>`;
+
+    // Film badge
+    const badge = m.film ? `<rect x="${labX + 4}" y="${y - 9}" width="6" height="6" rx="1" fill="${getColor(m.val)}" opacity="0.7"/>` : '';
+    html += badge;
+
+    const labelText = m.label;
+    html += `<text x="${labX + 14}" y="${y}" dominant-baseline="central" style="font-size:12px;fill:var(--color-text-primary);font-family:var(--font-sans);cursor:pointer" onclick='showDetail(${JSON.stringify(m)})'>${labelText}</text>`;
+  });
+
+  svg.innerHTML = html;
+}
+
+render();
+</script>

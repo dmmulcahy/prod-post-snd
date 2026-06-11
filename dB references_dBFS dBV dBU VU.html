@@ -1,0 +1,189 @@
+
+<style>
+h2.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.scale-wrap{padding:1.5rem 1rem 1rem;font-family:var(--font-sans)}
+.scale-row{display:flex;align-items:stretch;gap:0;margin-bottom:24px}
+.scale-label-col{width:90px;flex-shrink:0;display:flex;align-items:center;justify-content:flex-end;padding-right:10px}
+.scale-name{font-size:13px;font-weight:500;color:var(--color-text-primary);text-align:right;line-height:1.3}
+.scale-sub{font-size:11px;color:var(--color-text-secondary);text-align:right;margin-top:2px}
+.scale-track-wrap{flex:1;position:relative;height:36px}
+.scale-track{position:absolute;top:10px;left:0;right:0;height:16px;border-radius:4px;overflow:visible}
+.scale-marker{position:absolute;top:-3px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;cursor:pointer}
+.scale-marker-dot{width:10px;height:10px;border-radius:50%;border:2px solid var(--color-background-primary);flex-shrink:0}
+.scale-marker-label{font-size:10px;font-weight:500;white-space:nowrap;margin-top:2px;padding:1px 4px;border-radius:3px}
+.tick-label{position:absolute;bottom:-18px;transform:translateX(-50%);font-size:10px;color:var(--color-text-secondary);white-space:nowrap}
+.detail-box{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:8px;padding:10px 14px;margin-top:8px;min-height:52px;font-size:12px;color:var(--color-text-secondary);line-height:1.6;transition:opacity .2s}
+.detail-name{font-size:13px;font-weight:500;color:var(--color-text-primary);margin-bottom:3px}
+.legend-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px;padding:0 0 0 100px}
+.leg-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--color-text-secondary)}
+.leg-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+.note-bar{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--color-text-secondary);background:var(--color-background-secondary);border-radius:6px;padding:7px 12px;margin-bottom:16px;border:0.5px solid var(--color-border-tertiary)}
+</style>
+
+<div class="scale-wrap">
+<h2 class="sr-only">Interactive comparison of dB reference scales used in film production sound: dBFS, dBu, dBV, and VU meters</h2>
+
+<div class="note-bar">
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2"/><text x="7" y="11" text-anchor="middle" font-size="9" fill="currentColor" font-family="sans-serif">i</text></svg>
+  Click any marker to learn more about that reference point
+</div>
+
+<div class="legend-row">
+  <div class="leg-item"><div class="leg-dot" style="background:#3B8BD4"></div>dBFS digital</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#1D9E75"></div>dBu pro analog</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#BA7517"></div>dBV consumer</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#9F50B5"></div>VU meter</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#C04828"></div>Clip / danger</div>
+</div>
+
+<div id="scales-container"></div>
+
+<div class="detail-box" id="detail-box">
+  <div class="detail-name" id="detail-name">—</div>
+  <div id="detail-text">Hover or tap a marker to see details about that reference level.</div>
+</div>
+
+</div>
+
+<script>
+const SCALES = [
+  {
+    id: 'dbfs',
+    name: 'dBFS',
+    sub: 'digital reference',
+    color: '#3B8BD4',
+    fillColor: 'rgba(59,139,212,0.13)',
+    min: -80, max: 6,
+    displayMin: -80, displayMax: 6,
+    ticks: [-80,-60,-40,-20,0],
+    markers: [
+      { val: 0, label: '0 dBFS', color:'#C04828', desc:'Digital clip point', detail:'The absolute ceiling of any digital audio system. Any signal at or above 0 dBFS causes hard clipping — square-wave distortion with no analog equivalent. Always stay below this.' },
+      { val: -2, label: '−2', color:'#C04828', desc:'Broadcast headroom limit', detail:'Broadcast delivery specs (EBU R128, ATSC A/85) require true peaks no higher than −2 dBFS TP. This protects against inter-sample peaks that reconstruct above 0 after D/A conversion.' },
+      { val: -12, label: '−12', color:'#3B8BD4', desc:'Film dialogue target', detail:'Theatrical film delivery typically targets dialog at −18 to −12 dBFS. This leaves ample headroom for explosions, music, and effects to peak much higher.' },
+      { val: -18, label: '−18', color:'#3B8BD4', desc:'0 VU alignment point', detail:'In most professional DAWs and field recorders, 0 VU is calibrated to −18 dBFS (some use −20 dBFS). This is the "line level" operating sweet spot in the digital domain.' },
+      { val: -60, label: '−60', color:'#1D9E75', desc:'Mic level floor', detail:'Dynamic microphones on quiet sources can output as low as −60 dBFS at the preamp input before gain is applied. Good preamp design keeps the noise floor well below this.' },
+    ]
+  },
+  {
+    id: 'dbu',
+    name: 'dBu',
+    sub: 'pro analog (ref 0.775 V)',
+    color: '#1D9E75',
+    fillColor: 'rgba(29,158,117,0.13)',
+    min: -70, max: 30,
+    displayMin: -70, displayMax: 30,
+    ticks: [-60,-40,-20,0,4,20],
+    markers: [
+      { val: 24, label: '+24', color:'#C04828', desc:'Analog clip point', detail:'Most professional analog gear clips somewhere between +20 and +24 dBu. Beyond this point, the output stage saturates and you get harmonic distortion — the classic "warm" overdrive if gentle, ugly clipping if hard.' },
+      { val: 4, label: '+4', color:'#1D9E75', desc:'Pro line nominal', detail:'+4 dBu (1.228 V RMS) is the standard nominal operating level for all professional audio gear — consoles, outboard processors, audio interfaces, field mixers. This is where 0 VU sits on analog gear.' },
+      { val: 1.2, label: '≈+1.2', color:'#BA7517', desc:'Consumer line (≡ −10 dBV)', detail:'Consumer gear nominally operates at −10 dBV, which equals approximately +1.2 dBu. Connecting pro (+4 dBu) gear to consumer (−10 dBV) gear without a level converter causes a ~13 dB mismatch — signal too hot or too quiet.' },
+      { val: -20, label: '−20', color:'#9F50B5', desc:'Guitar / instrument DI', detail:'A passive guitar pickup outputs around −20 dBu. This is instrument level — higher than mic level but well below line level. A DI box converts the high impedance and raises it toward line level.' },
+      { val: -50, label: '−50', color:'#1D9E75', desc:'Typical mic output', detail:'A dynamic microphone on a normal speaking voice outputs around −50 dBu. A condenser might be −44 dBu in the same conditions. Your preamp adds 40–60 dB of gain to reach +4 dBu line level.' },
+    ]
+  },
+  {
+    id: 'dbv',
+    name: 'dBV',
+    sub: 'consumer analog (ref 1.000 V)',
+    color: '#BA7517',
+    fillColor: 'rgba(186,117,23,0.12)',
+    min: -72, max: 28,
+    displayMin: -72, displayMax: 28,
+    ticks: [-60,-40,-20,-10,0,20],
+    markers: [
+      { val: 21.8, label: '+21.8', color:'#C04828', desc:'≡ +24 dBu clip point', detail:'The same analog clip point as +24 dBu, expressed in dBV. Every dBu value maps to a dBV value 2.21 dB lower — the difference comes from their reference voltages (0.775 V vs 1.000 V).' },
+      { val: 1.79, label: '+1.79', color:'#1D9E75', desc:'≡ +4 dBu pro nominal', detail:'Professional line level (+4 dBu) equals +1.79 dBV. This is the same physical voltage — 1.228 V RMS — expressed using a different zero reference.' },
+      { val: -10, label: '−10', color:'#BA7517', desc:'Consumer line nominal', detail:'−10 dBV is the standard nominal operating level for consumer and prosumer gear: home stereo equipment, consumer mixers, some portable recorders, and RCA-connected devices.' },
+      { val: -22.2, label: '−22.2', color:'#BA7517', desc:'≡ −20 dBu guitar DI', detail:'Guitar/instrument level expressed in dBV. Notice how dBV values are always 2.21 dB lower than their dBu equivalents: −20 dBu → −22.21 dBV.' },
+    ]
+  },
+  {
+    id: 'vu',
+    name: 'VU',
+    sub: 'average level meter',
+    color: '#9F50B5',
+    fillColor: 'rgba(159,80,181,0.12)',
+    min: -30, max: 15,
+    displayMin: -30, displayMax: 15,
+    ticks: [-20,-10,-7,0,3],
+    markers: [
+      { val: 3, label: '+3 VU', color:'#C04828', desc:'Danger zone', detail:'VU meters are slow — they average over ~300ms. Fast transients (consonants, snare hits, door slams) can be 6–10 dB higher than what the VU meter shows. Sustained reading at +3 VU likely means you\'re clipping the peaks.' },
+      { val: 0, label: '0 VU', color:'#9F50B5', desc:'Nominal ≡ +4 dBu / −18 dBFS', detail:'Zero VU is the calibration anchor. On professional analog gear: 0 VU = +4 dBu = 1.228 V RMS. On most digital systems: 0 VU = −18 dBFS (some facilities use −20 dBFS). Dialog should average near 0 VU.' },
+      { val: -7, label: '−7 VU', color:'#9F50B5', desc:'Film dialog target region', detail:'In theatrical mixing, dialog is often kept in the −10 to −7 VU range to preserve maximum headroom for the dynamic range of the full mix (music, effects, explosions).' },
+      { val: -20, label: '−20 VU', color:'#9F50B5', desc:'Quiet room / ambience', detail:'Room tone and ambience tracks are typically mixed this low on the VU scale — well below dialog — so they sit naturally under the foreground elements.' },
+    ]
+  }
+];
+
+function pct(val, min, max) {
+  return Math.max(0, Math.min(100, ((val - min) / (max - min)) * 100));
+}
+
+function showDetail(marker) {
+  document.getElementById('detail-name').textContent = marker.label + ' — ' + marker.desc;
+  document.getElementById('detail-text').textContent = marker.detail;
+}
+
+const container = document.getElementById('scales-container');
+
+SCALES.forEach(scale => {
+  const row = document.createElement('div');
+  row.className = 'scale-row';
+
+  const labelCol = document.createElement('div');
+  labelCol.className = 'scale-label-col';
+  labelCol.innerHTML = `<div><div class="scale-name" style="color:${scale.color}">${scale.name}</div><div class="scale-sub">${scale.sub}</div></div>`;
+  row.appendChild(labelCol);
+
+  const trackWrap = document.createElement('div');
+  trackWrap.className = 'scale-track-wrap';
+  trackWrap.style.height = '52px';
+
+  const track = document.createElement('div');
+  track.className = 'scale-track';
+  track.style.background = scale.fillColor;
+  track.style.border = `0.5px solid ${scale.color}44`;
+
+  // Ticks
+  scale.ticks.forEach(t => {
+    const tick = document.createElement('div');
+    tick.style.cssText = `position:absolute;top:0;bottom:0;left:${pct(t,scale.displayMin,scale.displayMax)}%;width:1px;background:rgba(128,128,128,0.15)`;
+    track.appendChild(tick);
+
+    const lbl = document.createElement('div');
+    lbl.className = 'tick-label';
+    lbl.style.left = pct(t, scale.displayMin, scale.displayMax) + '%';
+    lbl.textContent = (t > 0 ? '+' : '') + t;
+    track.appendChild(lbl);
+  });
+
+  // Markers
+  scale.markers.forEach(m => {
+    const marker = document.createElement('div');
+    marker.className = 'scale-marker';
+    marker.style.left = pct(m.val, scale.displayMin, scale.displayMax) + '%';
+    marker.style.top = '2px';
+
+    const dot = document.createElement('div');
+    dot.className = 'scale-marker-dot';
+    dot.style.background = m.color;
+
+    const lbl = document.createElement('div');
+    lbl.className = 'scale-marker-label';
+    lbl.style.background = m.color + '22';
+    lbl.style.color = m.color;
+    lbl.style.border = `0.5px solid ${m.color}55`;
+    lbl.textContent = m.label;
+
+    marker.appendChild(dot);
+    marker.appendChild(lbl);
+    marker.addEventListener('click', () => showDetail(m));
+    marker.addEventListener('mouseenter', () => showDetail(m));
+    track.appendChild(marker);
+  });
+
+  trackWrap.appendChild(track);
+  row.appendChild(trackWrap);
+  container.appendChild(row);
+});
+</script>
