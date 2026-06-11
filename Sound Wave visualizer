@@ -1,0 +1,242 @@
+
+<style>
+  @keyframes conv { to { stroke-dashoffset: -30; } }
+  @keyframes pulse { 0%,100%{opacity:.6} 50%{opacity:1} }
+  .flow { stroke-dasharray:6 6; animation: conv var(--dur,1.8s) linear infinite; }
+  canvas { display:block; }
+  .slider-row { display:flex;align-items:center;gap:10px;margin:6px 0;font-size:13px;color:var(--color-text-secondary); }
+  .slider-row input { flex:1; }
+  .slider-row .val { min-width:52px;text-align:right;font-weight:500;color:var(--color-text-primary);font-size:13px; }
+  .badge { display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:500; }
+  .badge-c { background:var(--color-background-info);color:var(--color-text-info); }
+  .badge-r { background:var(--color-background-danger);color:var(--color-text-danger); }
+</style>
+
+<h2 class="sr-only">Sound Wave Visualizer</h2>
+
+<div style="padding:1rem 0 0">
+
+  <!-- Part 1: Particle view -->
+  <p style="font-size:12px;color:var(--color-text-secondary);margin-bottom:8px;font-weight:500;letter-spacing:.05em;text-transform:uppercase">Particle motion</p>
+  <canvas id="particleCanvas" width="640" height="120" style="width:100%;border-radius:8px;border:0.5px solid var(--color-border-tertiary)"></canvas>
+
+  <div style="display:flex;gap:12px;margin:8px 0 16px;font-size:12px">
+    <span><span class="badge badge-c">C</span> &nbsp;compression &mdash; particles crowd together, high pressure</span>
+    <span><span class="badge badge-r">R</span> &nbsp;rarefaction &mdash; particles spread apart, low pressure</span>
+  </div>
+
+  <!-- Part 2: Oscilloscope -->
+  <p style="font-size:12px;color:var(--color-text-secondary);margin-bottom:8px;font-weight:500;letter-spacing:.05em;text-transform:uppercase">Pressure over time (oscilloscope)</p>
+  <canvas id="waveCanvas" width="640" height="110" style="width:100%;border-radius:8px;border:0.5px solid var(--color-border-tertiary)"></canvas>
+
+  <!-- Controls -->
+  <div style="background:var(--color-background-secondary);border-radius:10px;padding:12px 16px;margin:16px 0 4px">
+    <div class="slider-row">
+      <span style="min-width:72px">Frequency</span>
+      <input type="range" min="0.5" max="4" step="0.05" value="1.5" id="freqSlider">
+      <span class="val" id="freqVal">1.5 Hz</span>
+    </div>
+    <div class="slider-row">
+      <span style="min-width:72px">Amplitude</span>
+      <input type="range" min="5" max="45" step="1" value="22" id="ampSlider">
+      <span class="val" id="ampVal">22 dB</span>
+    </div>
+  </div>
+
+  <!-- Info cards -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:12px">
+    <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px">
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:3px">Wave type</div>
+      <div style="font-size:15px;font-weight:500">Longitudinal</div>
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-top:2px">Particles move parallel to wave direction</div>
+    </div>
+    <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px">
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:3px">Speed in air</div>
+      <div style="font-size:15px;font-weight:500">~343 m/s</div>
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-top:2px">At 20°C room temperature</div>
+    </div>
+    <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px">
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:3px">Human range</div>
+      <div style="font-size:15px;font-weight:500">20–20k Hz</div>
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-top:2px">Infra &lt;20, Ultra &gt;20k Hz</div>
+    </div>
+    <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px">
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:3px">Medium needed?</div>
+      <div style="font-size:15px;font-weight:500">Yes</div>
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-top:2px">Cannot travel through a vacuum</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const pCanvas = document.getElementById('particleCanvas');
+const pCtx = pCanvas.getContext('2d');
+const wCanvas = document.getElementById('waveCanvas');
+const wCtx = wCanvas.getContext('2d');
+
+let freq = 1.5;
+let amp = 22;
+let t = 0;
+
+document.getElementById('freqSlider').oninput = e => {
+  freq = parseFloat(e.target.value);
+  document.getElementById('freqVal').textContent = freq.toFixed(2) + ' Hz';
+};
+document.getElementById('ampSlider').oninput = e => {
+  amp = parseInt(e.target.value);
+  document.getElementById('ampVal').textContent = amp + ' dB';
+};
+
+// Determine dark mode
+function isDark() {
+  return matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+function getTheme() {
+  const d = isDark();
+  return {
+    bg: d ? '#0f1117' : '#f8f8f5',
+    bg2: d ? '#181c26' : '#ededea',
+    text: d ? '#c8c5bc' : '#3d3d3a',
+    gridLine: d ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)',
+    particleFill: d ? '#4d9fff' : '#185FA5',
+    compBg: d ? 'rgba(24,95,165,0.18)' : 'rgba(180,212,244,0.35)',
+    rareBg: d ? 'rgba(240,69,69,0.12)' : 'rgba(247,193,193,0.4)',
+    waveLine: d ? '#4d9fff' : '#185FA5',
+    zeroLine: d ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)',
+    labelText: d ? 'rgba(200,197,188,0.6)' : 'rgba(80,78,72,0.7)',
+  };
+}
+
+// Particle grid
+const COLS = 28, ROWS = 4;
+const particles = [];
+for (let r = 0; r < ROWS; r++) {
+  for (let c = 0; c < COLS; c++) {
+    particles.push({ baseX: (c + 0.5) / COLS, baseY: (r + 1) / (ROWS + 1) });
+  }
+}
+
+function drawParticles(now) {
+  const W = pCanvas.width, H = pCanvas.height;
+  const th = getTheme();
+  const k = (amp / 45) * 0.038; // displacement amplitude as fraction of width
+
+  pCtx.clearRect(0, 0, W, H);
+  pCtx.fillStyle = th.bg;
+  pCtx.fillRect(0, 0, W, H);
+
+  // draw compression / rarefaction zones
+  const zones = 4;
+  for (let z = 0; z < zones * 2; z++) {
+    const phaseShift = (now * freq * 2 * Math.PI);
+    const zoneW = W / zones;
+    const startX = (z / (zones * 2)) * W;
+    const phase = (startX / W) * 2 * Math.PI - phaseShift;
+    const pressure = Math.cos(phase);
+    if (pressure > 0.15) {
+      pCtx.fillStyle = th.compBg;
+    } else if (pressure < -0.15) {
+      pCtx.fillStyle = th.rareBg;
+    } else {
+      continue;
+    }
+    const segW = W / (zones * 2);
+    pCtx.fillRect(startX, 0, segW, H);
+  }
+
+  // particles
+  particles.forEach(p => {
+    const basePixX = p.baseX * W;
+    const displacement = Math.sin(p.baseX * 2 * Math.PI * 2 - now * freq * 2 * Math.PI) * k * W;
+    const x = basePixX + displacement;
+    const y = p.baseY * H;
+    const density = Math.cos(p.baseX * 2 * Math.PI * 2 - now * freq * 2 * Math.PI);
+    const radius = 2.8 + density * 1.2 * (amp / 45);
+    const alpha = 0.55 + density * 0.3 * (amp / 45);
+    pCtx.beginPath();
+    pCtx.arc(x, y, Math.max(1, radius), 0, Math.PI * 2);
+    pCtx.fillStyle = th.particleFill;
+    pCtx.globalAlpha = Math.max(0.1, Math.min(1, alpha));
+    pCtx.fill();
+    pCtx.globalAlpha = 1;
+  });
+
+  // C / R labels
+  pCtx.font = '600 10px sans-serif';
+  pCtx.textAlign = 'center';
+  for (let i = 0; i < 4; i++) {
+    const phase = (i / 4) * 2 * Math.PI * 2 - now * freq * 2 * Math.PI;
+    const pressure = Math.cos(phase % (2 * Math.PI));
+    const lx = ((i + 0.5) / 4) * W;
+    if (pressure > 0.3) {
+      pCtx.fillStyle = '#185FA5';
+      pCtx.fillText('C', lx, 14);
+    } else if (pressure < -0.3) {
+      pCtx.fillStyle = '#A32D2D';
+      pCtx.fillText('R', lx, 14);
+    }
+  }
+}
+
+// Waveform history
+const histLen = 640;
+const history = new Float32Array(histLen).fill(0);
+
+function drawWave(now) {
+  const W = wCanvas.width, H = wCanvas.height;
+  const th = getTheme();
+  const mid = H / 2;
+
+  // push new sample
+  const sample = Math.sin(now * freq * 2 * Math.PI) * (amp / 45);
+  for (let i = 0; i < histLen - 1; i++) history[i] = history[i + 1];
+  history[histLen - 1] = sample;
+
+  wCtx.clearRect(0, 0, W, H);
+  wCtx.fillStyle = th.bg;
+  wCtx.fillRect(0, 0, W, H);
+
+  // grid lines
+  wCtx.strokeStyle = th.gridLine;
+  wCtx.lineWidth = 0.5;
+  for (let g = 1; g < 4; g++) {
+    const y = (g / 4) * H;
+    wCtx.beginPath(); wCtx.moveTo(0, y); wCtx.lineTo(W, y); wCtx.stroke();
+  }
+  // zero line
+  wCtx.strokeStyle = th.zeroLine;
+  wCtx.lineWidth = 1;
+  wCtx.beginPath(); wCtx.moveTo(0, mid); wCtx.lineTo(W, mid); wCtx.stroke();
+
+  // labels
+  wCtx.fillStyle = th.labelText;
+  wCtx.font = '10px sans-serif';
+  wCtx.textAlign = 'left';
+  wCtx.fillText('+ pressure', 4, 14);
+  wCtx.fillText('− pressure', 4, H - 4);
+
+  // wave
+  wCtx.beginPath();
+  wCtx.strokeStyle = th.waveLine;
+  wCtx.lineWidth = 1.5;
+  for (let i = 0; i < histLen; i++) {
+    const x = (i / histLen) * W;
+    const y = mid - history[i] * (mid - 12);
+    if (i === 0) wCtx.moveTo(x, y);
+    else wCtx.lineTo(x, y);
+  }
+  wCtx.stroke();
+}
+
+let last = null;
+function frame(ts) {
+  if (!last) last = ts;
+  t += (ts - last) / 1000;
+  last = ts;
+  drawParticles(t);
+  drawWave(t);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
